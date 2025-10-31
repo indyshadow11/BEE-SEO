@@ -70,11 +70,11 @@ echo ""
 
 # Create database if not exists
 echo "📦 Vérification de la base de données..."
-DB_EXISTS=$(docker exec $POSTGRES_CONTAINER psql -U admin -lqt 2>/dev/null | cut -d \| -f 1 | grep -w bythewise | wc -l | tr -d ' ')
+DB_EXISTS=$(docker exec $POSTGRES_CONTAINER psql -U admin -d postgres -lqt 2>/dev/null | cut -d \| -f 1 | grep -w bythewise | wc -l | tr -d ' ')
 
 if [ "$DB_EXISTS" = "0" ]; then
     echo "Création de la base bythewise..."
-    docker exec $POSTGRES_CONTAINER psql -U admin -c "CREATE DATABASE bythewise;"
+    docker exec $POSTGRES_CONTAINER psql -U admin -d postgres -c "CREATE DATABASE bythewise;"
 fi
 
 echo -e "${GREEN}✓ Base de données OK${NC}"
