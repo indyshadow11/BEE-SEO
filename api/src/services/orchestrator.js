@@ -75,6 +75,44 @@ async function getNextAvailableSubnet() {
   return `172.${nextOctet}.0.0/24`;
 }
 
+// Wait for N8N instance to be ready
+async function waitForN8N(containerId, maxAttempts = 30) {
+  console.log(`Waiting for N8N container ${containerId} to be ready...`);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      // Check if container is running
+      const { stdout: status } = await execAsync(
+        `docker inspect --format='{{.State.Status}}' ${containerId}`
+      );
+
+      if (status.trim() !== 'running') {
+        console.log(`Attempt ${attempt}/${maxAttempts}: Container not running yet (${status.trim()})`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
+      }
+
+      // Check if N8N health endpoint responds
+      try {
+        await execAsync(
+          `docker exec ${containerId} wget --no-verbose --tries=1 --spider http://localhost:5678/healthz`
+        );
+        console.log(`✓ N8N is ready after ${attempt} attempts`);
+        return true;
+      } catch (error) {
+        console.log(`Attempt ${attempt}/${maxAttempts}: N8N health check failed`);
+      }
+
+    } catch (error) {
+      console.log(`Attempt ${attempt}/${maxAttempts}: Error checking N8N - ${error.message}`);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+
+  throw new Error(`N8N failed to become ready after ${maxAttempts} attempts`);
+}
+
 /**
  * Create a new tenant with isolated N8N instance
  * @param {string} name - Tenant name
@@ -188,6 +226,16 @@ export async function createTenant(name, plan = 'starter') {
     const redisContainerId = await execAsync(
       `docker ps -q -f name=redis-tenant-${tenant.id}`
     ).then(res => res.stdout.trim());
+
+    // Wait for N8N to be ready
+    if (n8nContainerId) {
+      try {
+        await waitForN8N(n8nContainerId);
+      } catch (error) {
+        console.error('Warning: N8N health check failed, but continuing:', error.message);
+        // Don't fail the entire tenant creation if N8N is slow to start
+      }
+    }
 
     // Update tenant with container IDs
     await client.query(

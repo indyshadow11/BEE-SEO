@@ -1,0 +1,182 @@
+{
+  "name": "WF1 - Seed Expansion",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wf1-seed-expansion",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "wf1-seed-expansion"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract seed keyword from webhook\nconst seedKeyword = $json.body.seed_keyword || 'digital marketing';\n\n// Store in workflow static data\nreturn {\n  seed_keyword: seedKeyword,\n  timestamp: new Date().toISOString(),\n  workflow_id: 'WF1'\n};"
+      },
+      "id": "extract-seed",
+      "name": "Extract Seed",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "jsonParameters": true,
+        "options": {
+          "timeout": 60000
+        },
+        "bodyParametersJson": "={\n  \"model\": \"gpt-4\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an SEO keyword expansion expert. Generate 200 keyword variations from a seed keyword.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate 200 keyword variations for: {{ $json.seed_keyword }}. Return as JSON array.\"\n    }\n  ],\n  \"temperature\": 0.8,\n  \"max_tokens\": 2000\n}"
+      },
+      "id": "openai-expansion",
+      "name": "OpenAI - Generate Variations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse OpenAI response and extract keywords\nconst response = $json.body.choices[0].message.content;\nlet keywords = [];\n\ntry {\n  keywords = JSON.parse(response);\n} catch (e) {\n  // Fallback: split by newlines\n  keywords = response.split('\\n').filter(k => k.trim());\n}\n\n// Add metadata to each keyword\nconst enrichedKeywords = keywords.map((keyword, index) => ({\n  keyword: keyword,\n  position: index + 1,\n  seed_keyword: $node['Extract Seed'].json.seed_keyword,\n  search_volume: null,\n  difficulty: null,\n  intent: null,\n  created_at: new Date().toISOString()\n}));\n\nreturn enrichedKeywords;"
+      },
+      "id": "parse-keywords",
+      "name": "Parse Keywords",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO keywords (tenant_id, seed_keyword, keyword, position, metadata) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id",
+        "options": {}
+      },
+      "id": "save-to-db",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Tenant PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"workflow\": \"WF1 - Seed Expansion\",\n  \"seed_keyword\": \"{{ $node['Extract Seed'].json.seed_keyword }}\",\n  \"keywords_generated\": {{ $json.length }},\n  \"next_workflow\": \"WF2 - Clustering will auto-trigger\",\n  \"timestamp\": \"{{ $now.toISO() }}\"\n}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "={{ $env.WEBHOOK_BASE_URL }}/webhook/wf2-clustering",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\n  \"seed_keyword\": \"{{ $node['Extract Seed'].json.seed_keyword }}\",\n  \"keywords_count\": {{ $json.length }},\n  \"triggered_by\": \"WF1\"\n}"
+      },
+      "id": "trigger-wf2",
+      "name": "Trigger WF2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 450]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Seed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Seed": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - Generate Variations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - Generate Variations": {
+      "main": [
+        [
+          {
+            "node": "Parse Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Keywords": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Database": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Trigger WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "wf1-seed-expansion",
+  "tags": [
+    {
+      "name": "BYTHEWISE",
+      "id": "1"
+    },
+    {
+      "name": "SEO",
+      "id": "2"
+    }
+  ]
+}

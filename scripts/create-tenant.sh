@@ -187,6 +187,9 @@ async function main() {
         console.log('  Redis:', tenant.containers.redis);
         console.log('='.repeat(60));
 
+        // Output tenant ID for shell script to capture
+        console.log('\\nTENANT_ID=' + tenant.id);
+
         await closePool();
         process.exit(0);
     } catch (error) {
@@ -199,18 +202,58 @@ async function main() {
 main();
 EOF
 
-# Execute the Node.js script
+# Execute the Node.js script and capture output
 cd "$PROJECT_ROOT/api"
-node /tmp/create-tenant-tmp.js
+TENANT_OUTPUT=$(node /tmp/create-tenant-tmp.js 2>&1)
+EXIT_CODE=$?
+
+# Display the output
+echo "$TENANT_OUTPUT"
 
 # Clean up temporary file
 rm -f /tmp/create-tenant-tmp.js
 
+# Check if tenant creation was successful
+if [ $EXIT_CODE -ne 0 ]; then
+    print_error "Tenant creation failed!"
+    exit 1
+fi
+
+# Extract tenant ID from output
+TENANT_ID=$(echo "$TENANT_OUTPUT" | grep "^TENANT_ID=" | cut -d= -f2)
+
+if [ -z "$TENANT_ID" ]; then
+    print_error "Failed to extract tenant ID"
+    exit 1
+fi
+
 echo ""
 print_success "Tenant provisioning completed!"
 echo ""
+
+# Import workflows automatically
+print_step "Importing workflows to N8N..."
+echo ""
+
+if [ -f "$SCRIPT_DIR/import-workflows.sh" ]; then
+    if "$SCRIPT_DIR/import-workflows.sh" "$TENANT_ID"; then
+        print_success "Workflows imported successfully!"
+    else
+        print_error "Workflow import failed, but tenant was created"
+        print_info "You can retry with: ./scripts/import-workflows.sh $TENANT_ID"
+    fi
+else
+    print_error "import-workflows.sh not found"
+fi
+
+echo ""
 print_info "Next steps:"
 echo "  1. Access N8N at https://${CLIENT_NAME// /-}.app.bythewise.com (once DNS is configured)"
-echo "  2. Import workflows using: npm run import-workflows <tenant-id>"
-echo "  3. Configure credentials in the N8N interface"
+echo "  2. Configure credentials in the N8N interface (OpenAI, WordPress, etc.)"
+echo "  3. Test workflows with sample data"
+echo ""
+echo "Workflow URLs:"
+echo "  WF1: https://${CLIENT_NAME// /-}.app.bythewise.com/webhook/wf1-seed-expansion"
+echo "  WF2: https://${CLIENT_NAME// /-}.app.bythewise.com/webhook/wf2-clustering"
+echo "  WF3: Scheduled (Monday & Thursday at 8am)"
 echo ""

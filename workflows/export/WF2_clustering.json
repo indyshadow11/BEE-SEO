@@ -1,0 +1,228 @@
+{
+  "name": "WF2 - Clustering",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wf2-clustering",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "wf2-clustering"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT keyword, metadata FROM keywords WHERE seed_keyword = $1 AND clustered = false ORDER BY position LIMIT 200",
+        "options": {}
+      },
+      "id": "fetch-keywords",
+      "name": "Fetch Keywords",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Tenant PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Group keywords into batches of ~20 for clustering\nconst keywords = $items.map(item => item.json.keyword);\nconst batchSize = 20;\nconst batches = [];\n\nfor (let i = 0; i < keywords.length; i += batchSize) {\n  batches.push({\n    batch_id: Math.floor(i / batchSize) + 1,\n    keywords: keywords.slice(i, i + batchSize)\n  });\n}\n\nreturn batches;"
+      },
+      "id": "batch-keywords",
+      "name": "Batch Keywords",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "jsonParameters": true,
+        "options": {
+          "timeout": 60000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
+            }
+          }
+        },
+        "bodyParametersJson": "={\n  \"model\": \"gpt-4\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an SEO clustering expert. Group these keywords into semantic clusters of 3 keywords each based on search intent and topic similarity. Return JSON array of clusters.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Cluster these keywords: {{ $json.keywords.join(', ') }}\"\n    }\n  ],\n  \"temperature\": 0.3,\n  \"max_tokens\": 1500\n}"
+      },
+      "id": "openai-clustering",
+      "name": "OpenAI - Cluster Keywords",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse clustering results\nconst response = $json.body.choices[0].message.content;\nlet clusters = [];\n\ntry {\n  clusters = JSON.parse(response);\n} catch (e) {\n  console.error('Failed to parse clusters:', e);\n  return [];\n}\n\n// Transform clusters into proper format\nconst formattedClusters = clusters.map((cluster, index) => ({\n  cluster_id: `cluster_${Date.now()}_${index}`,\n  keywords: cluster.keywords || cluster,\n  intent: cluster.intent || 'informational',\n  topic: cluster.topic || 'general',\n  priority: cluster.priority || 'medium',\n  created_at: new Date().toISOString()\n}));\n\nreturn formattedClusters;"
+      },
+      "id": "parse-clusters",
+      "name": "Parse Clusters",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO clusters (tenant_id, cluster_id, keywords, intent, topic, priority, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING id",
+        "options": {}
+      },
+      "id": "save-clusters",
+      "name": "Save Clusters",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Tenant PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE keywords SET clustered = true WHERE keyword = ANY($1)",
+        "options": {}
+      },
+      "id": "mark-clustered",
+      "name": "Mark as Clustered",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Tenant PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"workflow\": \"WF2 - Clustering\",\n  \"clusters_created\": {{ $json.length }},\n  \"ready_for_generation\": true,\n  \"next_workflow\": \"WF3 - Generation (scheduled Mon & Thu 8am)\",\n  \"timestamp\": \"{{ $now.toISO() }}\"\n}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Keywords": {
+      "main": [
+        [
+          {
+            "node": "Batch Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Keywords": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - Cluster Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - Cluster Keywords": {
+      "main": [
+        [
+          {
+            "node": "Parse Clusters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Clusters": {
+      "main": [
+        [
+          {
+            "node": "Save Clusters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Clusters": {
+      "main": [
+        [
+          {
+            "node": "Mark as Clustered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Clustered": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "wf2-clustering",
+  "tags": [
+    {
+      "name": "BYTHEWISE",
+      "id": "1"
+    },
+    {
+      "name": "SEO",
+      "id": "2"
+    }
+  ]
+}
