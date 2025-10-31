@@ -47,8 +47,10 @@ lerna-debug.log*
 
 # Docker
 *.sql
+!api/src/config/*.sql
 docker/compose/tenants/*.yml
 !docker/compose/tenant-template.yml
+docker/tenants/*.yml
 
 # Backups
 backups/

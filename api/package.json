@@ -11,7 +11,9 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test tests/**/*.test.js",
-    "migrate": "node src/config/migrate.js"
+    "migrate": "node src/config/migrate.js",
+    "cli": "node src/cli.js",
+    "db:init": "node -e \"import('./src/config/database.js').then(m => m.initDatabase().then(() => process.exit(0)))\""
   },
   "keywords": ["saas", "fastify", "n8n", "multi-tenant"],
   "author": "BYTHEWISE",
