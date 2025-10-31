@@ -1,0 +1,134 @@
+version: '3.8'
+
+networks:
+  public:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+services:
+  # PostgreSQL - Base de données centrale
+  postgres:
+    image: postgres:15-alpine
+    container_name: bythewise-postgres
+    restart: unless-stopped
+    networks:
+      - internal
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bythewise_central}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache et queue management
+  redis:
+    image: redis:7-alpine
+    container_name: bythewise-redis
+    restart: unless-stopped
+    networks:
+      - internal
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Backend - Fastify
+  api:
+    build:
+      context: ./api
+      dockerfile: ../docker/images/api/Dockerfile
+    container_name: bythewise-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - public
+      - internal
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      HOST: 0.0.0.0
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-bythewise_central}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:-bythewise-secret-change-in-production}
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "3001:3001"
+
+  # Dashboard Frontend - Next.js 15
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: ../docker/images/dashboard/Dockerfile
+    container_name: bythewise-dashboard
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - public
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      API_URL: http://api:3001
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+
+  # Caddy - Reverse Proxy & SSL
+  caddy:
+    image: caddy:2-alpine
+    container_name: bythewise-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+      - dashboard
+    networks:
+      - public
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}

@@ -1,0 +1,46 @@
+{
+    auto_https off
+    admin off
+}
+
+# Development configuration
+:80 {
+    # Dashboard
+    handle /* {
+        reverse_proxy dashboard:3000
+    }
+
+    # API
+    handle /api/* {
+        reverse_proxy api:3001
+    }
+
+    # Health checks
+    handle /health {
+        reverse_proxy api:3001
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}
+
+# Production configuration (example)
+# {$DOMAIN:localhost} {
+#     # Automatic HTTPS with Let's Encrypt
+#
+#     # Dashboard
+#     handle /* {
+#         reverse_proxy dashboard:3000
+#     }
+#
+#     # API
+#     handle /api/* {
+#         reverse_proxy api:3001
+#     }
+#
+#     log {
+#         output file /var/log/caddy/access.log
+#     }
+# }

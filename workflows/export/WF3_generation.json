@@ -1,0 +1,342 @@
+{
+  "name": "WF3 - Article Generation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1,4"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "notes": "Runs Monday & Thursday at 8am"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM clusters WHERE published = false AND priority IN ('high', 'medium') ORDER BY priority DESC, created_at ASC LIMIT 1",
+        "options": {}
+      },
+      "id": "fetch-cluster",
+      "name": "Fetch Next Cluster",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Tenant PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-cluster",
+      "name": "Cluster Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "jsonParameters": true,
+        "options": {
+          "timeout": 120000
+        },
+        "bodyParametersJson": "={\n  \"model\": \"gpt-4\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an expert SEO content writer. Write comprehensive, engaging blog articles optimized for search engines.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a complete SEO-optimized article (2000+ words) about these keywords: {{ $json.keywords.join(', ') }}. Include: compelling title, meta description, introduction, H2/H3 headings, detailed content, conclusion, and FAQ section. Return as JSON with fields: title, meta_description, content, headings, faq.\"\n    }\n  ],\n  \"temperature\": 0.7,\n  \"max_tokens\": 4000\n}"
+      },
+      "id": "generate-content",
+      "name": "Generate Article Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse article content\nconst response = $json.body.choices[0].message.content;\nlet article = {};\n\ntry {\n  article = JSON.parse(response);\n} catch (e) {\n  // Fallback parsing\n  article = {\n    title: 'Generated Article',\n    meta_description: response.substring(0, 160),\n    content: response,\n    headings: [],\n    faq: []\n  };\n}\n\n// Add metadata\narticle.cluster_id = $node['Fetch Next Cluster'].json.cluster_id;\narticle.keywords = $node['Fetch Next Cluster'].json.keywords;\narticle.generated_at = new Date().toISOString();\narticle.word_count = article.content.split(' ').length;\n\nreturn article;"
+      },
+      "id": "parse-article",
+      "name": "Parse Article",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "https://api.openai.com/v1/images/generations",
+        "jsonParameters": true,
+        "options": {
+          "timeout": 60000
+        },
+        "bodyParametersJson": "={\n  \"model\": \"dall-e-3\",\n  \"prompt\": \"Professional blog featured image for article about: {{ $json.title }}. Style: modern, clean, professional\",\n  \"n\": 1,\n  \"size\": \"1792x1024\",\n  \"quality\": \"standard\"\n}"
+      },
+      "id": "generate-image",
+      "name": "Generate Featured Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Combine article with image\nconst article = $node['Parse Article'].json;\nconst imageUrl = $json.body.data[0].url;\n\nreturn {\n  ...article,\n  featured_image_url: imageUrl,\n  status: 'ready_to_publish'\n};"
+      },
+      "id": "combine-article",
+      "name": "Combine Article + Image",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "={{ $env.WORDPRESS_URL }}/wp-json/wp/v2/posts",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\n  \"title\": \"{{ $json.title }}\",\n  \"content\": \"{{ $json.content }}\",\n  \"excerpt\": \"{{ $json.meta_description }}\",\n  \"status\": \"publish\",\n  \"meta\": {\n    \"_yoast_wpseo_metadesc\": \"{{ $json.meta_description }}\",\n    \"_yoast_wpseo_focuskw\": \"{{ $json.keywords[0] }}\"\n  },\n  \"featured_media\": \"{{ $json.featured_image_url }}\"\n}"
+      },
+      "id": "publish-wordpress",
+      "name": "Publish to WordPress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1650, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3",
+          "name": "WordPress API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO articles (tenant_id, cluster_id, title, content, wordpress_url, wordpress_id, published_at, metadata) VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7::jsonb) RETURNING id",
+        "options": {}
+      },
+      "id": "save-article",
+      "name": "Save Article Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1850, 200],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Tenant PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clusters SET published = true, published_at = NOW() WHERE cluster_id = $1",
+        "options": {}
+      },
+      "id": "mark-published",
+      "name": "Mark Cluster Published",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2050, 200],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Tenant PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "={{ $env.NOTIFICATION_WEBHOOK_URL }}",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\n  \"event\": \"article_published\",\n  \"article_title\": \"{{ $node['Parse Article'].json.title }}\",\n  \"wordpress_url\": \"{{ $json.body.link }}\",\n  \"keywords\": {{ $node['Parse Article'].json.keywords }},\n  \"word_count\": {{ $node['Parse Article'].json.word_count }},\n  \"published_at\": \"{{ $now.toISO() }}\"\n}"
+      },
+      "id": "send-notification",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2050, 350]
+    },
+    {
+      "parameters": {
+        "functionCode": "// No cluster available - skip\nreturn {\n  skipped: true,\n  reason: 'No unpublished clusters available',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "skip-execution",
+      "name": "Skip - No Clusters",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 400]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Next Cluster",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Next Cluster": {
+      "main": [
+        [
+          {
+            "node": "Cluster Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cluster Available?": {
+      "main": [
+        [
+          {
+            "node": "Generate Article Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip - No Clusters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Article Content": {
+      "main": [
+        [
+          {
+            "node": "Parse Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Article": {
+      "main": [
+        [
+          {
+            "node": "Generate Featured Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Featured Image": {
+      "main": [
+        [
+          {
+            "node": "Combine Article + Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Article + Image": {
+      "main": [
+        [
+          {
+            "node": "Publish to WordPress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to WordPress": {
+      "main": [
+        [
+          {
+            "node": "Save Article Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Article Record": {
+      "main": [
+        [
+          {
+            "node": "Mark Cluster Published",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1",
+  "id": "wf3-generation",
+  "tags": [
+    {
+      "name": "BYTHEWISE",
+      "id": "1"
+    },
+    {
+      "name": "SEO",
+      "id": "2"
+    },
+    {
+      "name": "Scheduled",
+      "id": "3"
+    }
+  ]
+}
