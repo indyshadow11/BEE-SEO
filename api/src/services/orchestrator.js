@@ -187,7 +187,7 @@ export async function createTenant(name, plan = 'starter') {
       .replace(/SUBNET_CIDR/g, subnetCidr);
 
     // Save docker-compose file
-    const composeFilePath = join(__dirname, `../../docker/tenants/docker-compose-tenant-${tenant.id}.yml`);
+    const composeFilePath = join(__dirname, `../../../docker/tenants/docker-compose-tenant-${tenant.id}.yml`);
     writeFileSync(composeFilePath, dockerCompose);
 
     console.log(`✓ Docker compose file created: ${composeFilePath}`);
