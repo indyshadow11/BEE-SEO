@@ -174,7 +174,7 @@ export async function createTenant(name, plan = 'starter') {
     const tenant = insertResult.rows[0];
 
     // Generate docker-compose file from template
-    const templatePath = join(__dirname, '../../docker/compose/tenant-template.yml');
+    const templatePath = join(__dirname, '../../../docker/compose/tenant-template.yml');
     const template = readFileSync(templatePath, 'utf8');
 
     const dockerCompose = template
