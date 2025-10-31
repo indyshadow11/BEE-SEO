@@ -61,14 +61,14 @@ async function getNextAvailableSubnet() {
   );
 
   if (result.rows.length === 0) {
-    return '172.20.0.0/24';
+    return '172.100.0.0/24';
   }
 
   const lastSubnet = result.rows[0].subnet_cidr;
   const match = lastSubnet.match(/172\.(\d+)\.0\.0\/24/);
 
   if (!match) {
-    return '172.20.0.0/24';
+    return '172.100.0.0/24';
   }
 
   const nextOctet = parseInt(match[1]) + 1;
@@ -182,8 +182,8 @@ export async function createTenant(name, plan = 'starter') {
       .replace(/TENANT_NAME/g, name)
       .replace(/TENANT_PLAN/g, plan)
       .replace(/SUBDOMAIN/g, subdomain)
-      .replace(/POSTGRES_PASSWORD/g, postgresPassword)
-      .replace(/REDIS_PASSWORD/g, redisPassword)
+      .replace(/\{\{POSTGRES_PASSWORD\}\}/g, postgresPassword)
+      .replace(/\{\{REDIS_PASSWORD\}\}/g, redisPassword)
       .replace(/SUBNET_CIDR/g, subnetCidr);
 
     // Save docker-compose file
