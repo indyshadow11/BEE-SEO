@@ -2,12 +2,7 @@ networks:
   public:
     external: true
   tenant_TENANT_ID:
-    driver: bridge
-    internal: true
-    ipam:
-      driver: default
-      config:
-        - subnet: SUBNET_CIDR
+    external: true
 
 volumes:
   n8n_data_TENANT_ID:
