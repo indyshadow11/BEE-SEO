@@ -188,6 +188,11 @@ export async function createTenant(name, plan = 'starter') {
 
     // Save docker-compose file
     const composeFilePath = join(__dirname, `../../../docker/tenants/docker-compose-tenant-${tenant.id}.yml`);
+
+    // Create directory if it doesn't exist
+    const tenantsDir = dirname(composeFilePath);
+    mkdirSync(tenantsDir, { recursive: true });
+
     writeFileSync(composeFilePath, dockerCompose);
 
     console.log(`✓ Docker compose file created: ${composeFilePath}`);
