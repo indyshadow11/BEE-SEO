@@ -36,8 +36,16 @@ if [ -z "$POSTGRES_CONTAINER" ]; then
         postgres:15-alpine
 
     POSTGRES_CONTAINER="bythewise-postgres"
-    echo "⏳ Attente 10 secondes (démarrage PostgreSQL)..."
-    sleep 10
+    echo "⏳ Attente que PostgreSQL soit prêt..."
+
+    # Wait for PostgreSQL to be ready (max 30 seconds)
+    for i in {1..30}; do
+        if docker exec $POSTGRES_CONTAINER pg_isready -U admin >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ PostgreSQL prêt après ${i}s${NC}"
+            break
+        fi
+        sleep 1
+    done
 fi
 
 echo -e "${GREEN}✓ PostgreSQL: $POSTGRES_CONTAINER${NC}"
@@ -62,25 +70,28 @@ echo ""
 
 # Create database if not exists
 echo "📦 Vérification de la base de données..."
-DB_EXISTS=$(docker exec $POSTGRES_CONTAINER psql -U admin -tc "SELECT 1 FROM pg_database WHERE datname='bythewise'" 2>/dev/null | grep -c 1 || echo "0")
+DB_EXISTS=$(docker exec $POSTGRES_CONTAINER psql -U admin -lqt 2>/dev/null | cut -d \| -f 1 | grep -w bythewise | wc -l | tr -d ' ')
 
-if [ "$DB_EXISTS" -eq "0" ]; then
+if [ "$DB_EXISTS" = "0" ]; then
     echo "Création de la base bythewise..."
-    docker exec $POSTGRES_CONTAINER psql -U admin -c "CREATE DATABASE bythewise;" 2>/dev/null
+    docker exec $POSTGRES_CONTAINER psql -U admin -c "CREATE DATABASE bythewise;"
 fi
 
 echo -e "${GREEN}✓ Base de données OK${NC}"
 
 # Initialize schema
 echo "📋 Vérification des tables..."
-TABLES=$(docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -tc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ' || echo "0")
+TABLES=$(docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -tc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>&1)
 
-if [ "$TABLES" -lt "5" ]; then
+# Clean up the output
+TABLES=$(echo "$TABLES" | tr -d ' \n\r')
+
+if [ -z "$TABLES" ] || [ "$TABLES" = "0" ]; then
     echo "Initialisation du schéma..."
     docker cp api/src/config/schema.sql $POSTGRES_CONTAINER:/tmp/schema.sql
-    docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -f /tmp/schema.sql 2>&1 | grep -i "create\|error" || true
+    docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -f /tmp/schema.sql
 
-    TABLES=$(docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -tc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ')
+    TABLES=$(docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -tc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>&1 | tr -d ' \n\r')
 fi
 
 echo -e "${GREEN}✓ Tables créées: $TABLES${NC}"
@@ -159,33 +170,21 @@ async function go() {
         console.log('ID:', tenant.id);
         console.log('Nom:', tenant.name);
         console.log('Subdomain:', tenant.subdomain);
-        console.log('N8N URL:', tenant.n8n_url || 'http://localhost:5678');
+        console.log('Plan:', tenant.plan);
+        console.log('N8N URL:', tenant.n8n_url);
         console.log('═══════════════════════════════════════════════════════');
         console.log('');
-        console.log('Conteneurs:');
-        console.log('  N8N:', tenant.containers?.n8n || 'À créer');
-        console.log('  PostgreSQL:', tenant.containers?.postgres || 'À créer');
-        console.log('  Redis:', tenant.containers?.redis || 'À créer');
+        console.log('Les conteneurs sont en cours de démarrage...');
+        console.log('N8N sera accessible dans quelques minutes.');
         console.log('');
-        console.log('TENANT_ID=' + tenant.id);
-
-        await pool.end();
         process.exit(0);
     } catch (error) {
         console.error('');
         console.error('❌ ERREUR:', error.message);
         console.error('');
-
-        if (error.message.includes('Cannot find module')) {
-            console.error('→ Problème de modules Node.js');
-            console.error('→ Lance: cd api && npm install');
-        } else if (error.message.includes('connect')) {
-            console.error('→ Impossible de se connecter à PostgreSQL');
-            console.error('→ Vérifie que PostgreSQL tourne sur port 5432');
-        } else {
+        if (error.stack) {
             console.error('Stack:', error.stack);
         }
-
         process.exit(1);
     }
 }
@@ -198,35 +197,28 @@ setTimeout(() => {
 go();
 EOFJS
 
-# Run it from api directory
-cd api
-node create-tenant-now.js
+# Run the script
+cd api && node create-tenant-now.js
 EXIT_CODE=$?
 cd ..
 
+# Cleanup
 rm -f api/create-tenant-now.js
 
-echo ""
-echo ""
-
 if [ $EXIT_CODE -eq 0 ]; then
+    echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║  ✓ TOUT EST PRÊT !                                  ║${NC}"
+    echo -e "${GREEN}║  ✅ SUCCÈS !                                        ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo "Prochaines étapes:"
+    echo "Pour vérifier les conteneurs:"
+    echo "  docker ps | grep tenant"
     echo ""
-    echo "1. Lance l'API:"
-    echo "   cd api && npm run dev"
-    echo ""
-    echo "2. Lance le Dashboard (autre terminal):"
-    echo "   cd dashboard && npm run dev"
-    echo ""
-    echo "3. Ouvre http://localhost:3000"
-    echo "   Login: demo@bythewise.com"
-    echo "   Password: demo123"
+    echo "Pour voir les logs:"
+    echo "  docker logs -f n8n-tenant-<ID>"
     echo ""
 else
+    echo ""
     echo -e "${RED}╔══════════════════════════════════════════════════════╗${NC}"
     echo -e "${RED}║  ❌ ERREUR                                           ║${NC}"
     echo -e "${RED}╚══════════════════════════════════════════════════════╝${NC}"
@@ -236,4 +228,5 @@ else
     echo "2. Port 5432 libre: lsof -i :5432"
     echo "3. Dépendances: cd api && npm install"
     echo ""
+    exit 1
 fi
