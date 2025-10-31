@@ -129,8 +129,9 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # Simple Node.js script
-cat > /tmp/create-tenant-simple.js << 'EOFJS'
-import { createTenant } from './api/src/services/orchestrator.js';
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cat > /tmp/create-tenant-simple.js << EOFJS
+import { createTenant } from '${SCRIPT_DIR}/api/src/services/orchestrator.js';
 import pg from 'pg';
 
 const pool = new pg.Pool({
