@@ -62,25 +62,25 @@ echo ""
 
 # Create database if not exists
 echo "📦 Vérification de la base de données..."
-DB_EXISTS=$(docker exec $POSTGRES_CONTAINER psql -U admin -tc "SELECT 1 FROM pg_database WHERE datname='bythewise_central'" 2>/dev/null | grep -c 1 || echo "0")
+DB_EXISTS=$(docker exec $POSTGRES_CONTAINER psql -U admin -tc "SELECT 1 FROM pg_database WHERE datname='bythewise'" 2>/dev/null | grep -c 1 || echo "0")
 
 if [ "$DB_EXISTS" -eq "0" ]; then
-    echo "Création de la base bythewise_central..."
-    docker exec $POSTGRES_CONTAINER psql -U admin -c "CREATE DATABASE bythewise_central;" 2>/dev/null
+    echo "Création de la base bythewise..."
+    docker exec $POSTGRES_CONTAINER psql -U admin -c "CREATE DATABASE bythewise;" 2>/dev/null
 fi
 
 echo -e "${GREEN}✓ Base de données OK${NC}"
 
 # Initialize schema
 echo "📋 Vérification des tables..."
-TABLES=$(docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise_central -tc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ' || echo "0")
+TABLES=$(docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -tc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ' || echo "0")
 
 if [ "$TABLES" -lt "5" ]; then
     echo "Initialisation du schéma..."
     docker cp api/src/config/schema.sql $POSTGRES_CONTAINER:/tmp/schema.sql
-    docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise_central -f /tmp/schema.sql 2>&1 | grep -i "create\|error" || true
+    docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -f /tmp/schema.sql 2>&1 | grep -i "create\|error" || true
 
-    TABLES=$(docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise_central -tc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ')
+    TABLES=$(docker exec $POSTGRES_CONTAINER psql -U admin -d bythewise -tc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ')
 fi
 
 echo -e "${GREEN}✓ Tables créées: $TABLES${NC}"
@@ -100,9 +100,9 @@ JWT_SECRET=change-this-secret-in-production
 
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_DB=bythewise_central
+POSTGRES_DB=bythewise
 POSTGRES_USER=admin
-POSTGRES_PASSWORD=changeme
+POSTGRES_PASSWORD=postgres123
 
 REDIS_HOST=localhost
 REDIS_PORT=6379
@@ -136,9 +136,9 @@ import pg from 'pg';
 const pool = new pg.Pool({
     host: 'localhost',
     port: 5432,
-    database: 'bythewise_central',
+    database: 'bythewise',
     user: 'admin',
-    password: 'changeme',
+    password: 'postgres123',
 });
 
 async function go() {
