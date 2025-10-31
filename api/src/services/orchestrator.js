@@ -209,7 +209,7 @@ export async function createTenant(name, plan = 'starter') {
     // Start containers
     console.log(`🚀 Starting containers for tenant ${tenant.id}...`);
     const { stdout, stderr } = await execAsync(
-      `docker-compose -f ${composeFilePath} up -d`,
+      `docker compose -f ${composeFilePath} up -d`,
       { cwd: join(__dirname, '../..') }
     );
 
@@ -306,11 +306,11 @@ export async function deleteTenant(tenantId) {
     const tenant = result.rows[0];
 
     // Stop and remove containers
-    const composeFilePath = join(__dirname, `../../docker/tenants/docker-compose-tenant-${tenantId}.yml`);
+    const composeFilePath = join(__dirname, `../../../docker/tenants/docker-compose-tenant-${tenantId}.yml`);
 
     try {
       console.log(`🛑 Stopping containers for tenant ${tenantId}...`);
-      await execAsync(`docker-compose -f ${composeFilePath} down -v`);
+      await execAsync(`docker compose -f ${composeFilePath} down -v`);
       console.log(`✓ Containers stopped and removed`);
     } catch (error) {
       console.error('Error stopping containers:', error.message);

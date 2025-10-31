@@ -191,9 +191,9 @@ async function go() {
 }
 
 setTimeout(() => {
-    console.error('⏱️ TIMEOUT après 30 secondes');
+    console.error('⏱️ TIMEOUT après 120 secondes');
     process.exit(1);
-}, 30000);
+}, 120000);
 
 go();
 EOFJS
