@@ -1,15 +1,17 @@
+import dotenv from 'dotenv';
+
+// Load environment variables FIRST before any other imports
+dotenv.config();
+
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
-import dotenv from 'dotenv';
 
 // Import middleware and routes
 import { authenticate, checkTenantAccess } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
-
-dotenv.config();
 
 const fastify = Fastify({
   logger: {

@@ -1,13 +1,18 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'bythewise-secret-change-in-production';
+/**
+ * Get JWT secret at runtime (not at import time)
+ */
+function getJWTSecret() {
+  return process.env.JWT_SECRET || 'bythewise-secret-change-in-production';
+}
 
 /**
  * Verify JWT token
  */
 export function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, getJWTSecret());
   } catch (error) {
     return null;
   }
@@ -24,7 +29,7 @@ export function generateToken(user) {
     role: user.role,
   };
 
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, getJWTSecret(), { expiresIn: '7d' });
 }
 
 /**
