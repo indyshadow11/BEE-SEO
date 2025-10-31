@@ -128,10 +128,9 @@ echo -e "${BLUE}║  CRÉATION DU TENANT                                 ║${NC
 echo -e "${BLUE}╚══════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Simple Node.js script
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cat > /tmp/create-tenant-simple.js << EOFJS
-import { createTenant } from '${SCRIPT_DIR}/api/src/services/orchestrator.js';
+# Simple Node.js script dans le dossier api
+cat > api/create-tenant-now.js << 'EOFJS'
+import { createTenant } from './src/services/orchestrator.js';
 import pg from 'pg';
 
 const pool = new pg.Pool({
@@ -199,11 +198,13 @@ setTimeout(() => {
 go();
 EOFJS
 
-# Run it
-node /tmp/create-tenant-simple.js
+# Run it from api directory
+cd api
+node create-tenant-now.js
 EXIT_CODE=$?
+cd ..
 
-rm -f /tmp/create-tenant-simple.js
+rm -f api/create-tenant-now.js
 
 echo ""
 echo ""
