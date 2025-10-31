@@ -102,7 +102,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=bythewise
 POSTGRES_USER=admin
-POSTGRES_PASSWORD=postgres123
+POSTGRES_PASSWORD=changeme
 
 REDIS_HOST=localhost
 REDIS_PORT=6379
@@ -138,7 +138,7 @@ const pool = new pg.Pool({
     port: 5432,
     database: 'bythewise',
     user: 'admin',
-    password: 'postgres123',
+    password: 'changeme',
 });
 
 async function go() {
