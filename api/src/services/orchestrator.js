@@ -61,18 +61,18 @@ async function getNextAvailableSubnet() {
   );
 
   if (result.rows.length === 0) {
-    return '172.100.0.0/24';
+    return '10.200.0.0/24';
   }
 
   const lastSubnet = result.rows[0].subnet_cidr;
-  const match = lastSubnet.match(/172\.(\d+)\.0\.0\/24/);
+  const match = lastSubnet.match(/10\.200\.(\d+)\.0\/24/);
 
   if (!match) {
-    return '172.100.0.0/24';
+    return '10.200.0.0/24';
   }
 
   const nextOctet = parseInt(match[1]) + 1;
-  return `172.${nextOctet}.0.0/24`;
+  return `10.200.${nextOctet}.0/24`;
 }
 
 // Wait for N8N instance to be ready
